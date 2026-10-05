@@ -162,6 +162,22 @@ h1,h2,h3{font-family:var(--display);margin:0;font-weight:800}
 .legend{display:flex;gap:14px;font-size:.85rem;font-weight:700;flex-wrap:wrap}
 .legend i{display:inline-block;width:.9em;height:.9em;border-radius:50%;margin-right:.35em;vertical-align:-.1em}
 
+/* calculations */
+.calcpanel{display:none;flex-direction:column;gap:8px;background:#fff;border:3px solid var(--ink);border-radius:18px;padding:12px 14px;flex:none}
+#screen-game.calc .calcpanel{display:flex}
+#screen-game.calc .tip,#screen-game.calc .helperbar,#screen-game.calc .field,#screen-game.calc #preBar,#screen-game.calc #resultBar{display:none !important}
+.calctop{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.calcprog{font:800 1.05rem var(--display)}
+.calcworth{font-size:.88rem;font-weight:700;opacity:.8}
+.calcq{font:800 clamp(1.1rem,3vw,1.5rem) var(--display);line-height:1.25}
+.calcrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.calcrow input{font:800 1.6rem var(--display);width:6.5em;padding:.25em .5em;border:3px solid var(--ink);border-radius:12px;text-align:center;color:var(--ink);background:#fff}
+.calcunit{font:800 1.3rem var(--display)}
+.calcfb{min-height:2.7em;font-weight:700;line-height:1.35}
+.calcfb.good{color:#1b7a2f}
+.calcfb.bad{color:#b4231c}
+.calcend{display:flex;gap:10px;flex-wrap:wrap}
+
 /* helper banner */
 .helperbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;border:2px solid var(--ink);border-radius:12px;padding:.45em .8em;font-weight:700;font-size:.95rem;line-height:1.3;background:#fff}
 .helperbar.guided{background:#fff6b8}
@@ -302,6 +318,25 @@ select{
     <canvas id="graph"></canvas>
     <div class="countdown hidden" id="countdown"></div>
   </div>
+  <div class="calcpanel" id="calcPanel">
+    <div class="calctop">
+      <div><div class="calcprog" id="calcProg"></div><div class="calcworth" id="calcWorth"></div></div>
+      <button id="btnCalcBack" class="btn small">Back to results</button>
+    </div>
+    <div class="calcq" id="calcQ"></div>
+    <div class="calcrow" id="calcRow">
+      <input id="calcInput" type="text" inputmode="text" autocomplete="off" spellcheck="false" aria-label="Your answer">
+      <button id="btnSign" class="btn small" title="Flip positive and negative" aria-label="Flip positive and negative">+/-</button>
+      <span class="calcunit" id="calcUnit"></span>
+      <button id="btnCalcCheck" class="btn primary">Check</button>
+    </div>
+    <div class="calcfb info" id="calcFb"></div>
+    <div class="calcend"><button id="btnCalcNext" class="btn primary hidden">Next question</button></div>
+    <div class="calcend hidden" id="calcEnd">
+      <button id="btnCalcRetry" class="btn">Try again</button>
+      <button id="btnCalcNextLevel" class="btn primary">Next level</button>
+    </div>
+  </div>
   <div class="bar" id="preBar">
     <div class="hint" id="preHint"></div>
     <button id="btnStart" class="btn primary">Start</button>
@@ -316,10 +351,10 @@ select{
       <div class="legend"><span><i style="background:var(--target)"></i>Target</span><span><i style="background:var(--ring)"></i>You</span></div>
     </div>
     <div class="row">
+      <button id="btnCalc" class="btn small primary">Calculate for cash</button>
       <button id="btnReplay" class="btn small">Watch replay</button>
       <button id="btnRetry" class="btn small">Try again</button>
-      <button id="btnResultShop" class="btn small">Cash shop</button>
-      <button id="btnNext" class="btn small primary">Next level</button>
+      <button id="btnNext" class="btn small">Next level</button>
     </div>
   </div>
 </section>
@@ -336,7 +371,7 @@ select{
   <div class="tabs" id="shopTabs"></div>
   <p class="shopnote" id="shopNote"></p>
   <div class="grid" id="shopGrid"></div>
-  <div class="howto">Earn Class Cash on the Hard levels (5 to 8) and Random Hard. Each run pays about 1 cash per 10 points, times the level's multiplier (harder levels pay more). Turning on the tracker dot cuts your cash in half. The first 3 runs on each level every day pay out, and beating your own best earns a bonus. Easy levels (1 to 4 and Random Easy) are practice and don't pay.</div>
+  <div class="howto">Earn Class Cash on the Hard levels (5 to 8) and Random Hard. Each run pays about 1 cash per 10 points, times the level's multiplier (harder levels pay more). Turning on the tracker dot cuts your cash in half. The first 3 runs on each level every day pay out, and beating your own best earns a bonus. Easy levels (1 to 4 and Random Easy) are practice and don't pay for running, but answering the calculation questions after any run earns Class Cash.</div>
 </section>
 
 <!-- LEADERBOARD -->
@@ -434,7 +469,7 @@ const store = {
 const MIN = -5, MAX = 5, FIELD = 10; // meters, 0 is the middle of the field
 const ss = u => { u = Math.max(0, Math.min(1, u)); return u*u*(3 - 2*u); };
 function pl(points){
-  return t => {
+  const f = t => {
     if(t <= points[0][0]) return points[0][1];
     for(let i = 1; i < points.length; i++){
       if(t <= points[i][0]){
@@ -444,6 +479,8 @@ function pl(points){
     }
     return points[points.length-1][1];
   };
+  f.pts = points;
+  return f;
 }
 const LEVELS = [
   {id:"1", name:"Stay put", T:6, ghost:true, goal:"bone", tip:"A flat line means the dog is not moving.", fn:pl([[0,-2],[6,-2]])},
@@ -461,28 +498,23 @@ const RANDOM = {
 };
 const cap = s => s[0].toUpperCase() + s.slice(1);
 function makeRandom(kind){
-  const c = RANDOM[kind], minDur = 1.5;
-  const w = Array.from({length:c.n}, () => Math.random() + .3);
-  const ws = w.reduce((a,b) => a + b, 0);
-  const extra = c.T - minDur*c.n;
-  const durs = w.map(x => minDur + extra*x/ws);
-  let x = -4 + Math.random()*8, t = 0;
+  const c = RANDOM[kind];
+  // whole-number times (at least 2 s per leg) and whole-number positions, so the graph is readable
+  const durs = Array(c.n).fill(2);
+  for(let k = 0; k < c.T - 2*c.n; k++) durs[Math.floor(Math.random()*c.n)]++;
+  let x = Math.floor(Math.random()*9) - 4, t = 0;
   const pts = [[0, x]];
   durs.forEach((d, i) => {
     t += d;
     let nx = x;
     const hold = i > 0 && Math.random() < c.hold;
     if(!hold){
-      for(let k = 0; k < 40; k++){
-        const maxD = Math.min(c.spd*d, 8);
-        const dx = (Math.random()*2 - 1) * maxD;
-        const cand = x + dx;
-        if(cand >= -4.5 && cand <= 4.5 && Math.abs(dx) >= 1.5){ nx = cand; break; }
-      }
+      const maxD = Math.min(Math.floor(c.spd*d), 8), opts = [];
+      for(let cand = -4; cand <= 4; cand++){ const dx = Math.abs(cand - x); if(dx >= 2 && dx <= maxD) opts.push(cand); }
+      if(opts.length) nx = opts[Math.floor(Math.random()*opts.length)];
     }
     pts.push([t, nx]); x = nx;
   });
-  pts[pts.length-1][0] = c.T;
   const tips = {
     easy:"Follow the ghost dog and watch how the line changes.",
     hard:"Read the whole graph before you start. Where are the stops and turns?"
@@ -553,12 +585,12 @@ const MULT = {"5":4,"6":4,"7":5,"8":6,"random_hard":6};
 const PAID_RUNS = 3;
 function defaultRec(){
   return {cash:0, best:{}, owned:{color:["ink"],ring:["pink"],hat:["none"],field:["classic"]},
-          eq:{color:"ink",ring:"pink",hat:"none",field:"classic"}, day:"", paid:{}};
+          eq:{color:"ink",ring:"pink",hat:"none",field:"classic"}, day:"", paid:{}, calcPaid:{}};
 }
 function getRec(name){
   const w = store.get(WALLET_KEY, {}), r = w[name] || {}, d = defaultRec();
   return {
-    cash: r.cash || 0, best: r.best || {}, day: r.day || "", paid: r.paid || {},
+    cash: r.cash || 0, best: r.best || {}, day: r.day || "", paid: r.paid || {}, calcPaid: r.calcPaid || {},
     owned: Object.assign(d.owned, r.owned || {}), eq: Object.assign(d.eq, r.eq || {})
   };
 }
@@ -568,7 +600,7 @@ function awardCash(mode, score, helped, practice){
   const rec = getRec(playerName);
   const key = helped ? mode + "_h" : mode;   // bests are tracked per board
   const today = new Date().toLocaleDateString();
-  if(rec.day !== today){ rec.day = today; rec.paid = {}; }
+  if(rec.day !== today){ rec.day = today; rec.paid = {}; rec.calcPaid = {}; }
   const isBest = !(rec.best[key] >= score);
   if(isBest) rec.best[key] = score;
   let runCash = 0, bonus = 0, capped = false;
@@ -722,7 +754,6 @@ function shopAct(tab, item){
 $("btnShopBack").onclick = () => { if(shopFrom === "screen-start") showScreen("screen-start"); else openLevels(); };
 $("btnStartShop").onclick = () => { if(tryName()) openShop("screen-start"); };
 $("btnLevelsShop").onclick = () => openShop("screen-levels");
-$("btnResultShop").onclick = () => openShop("screen-levels");
 
 
 /* ============================================================
@@ -843,6 +874,7 @@ function setGoal(){
   place(gEl, lv.fn(lv.T));
 }
 function startLevel(level){
+  $("screen-game").classList.remove("calc");
   applyEquipped();
   cancelAnimationFrame(rafId);
   lv = level; phase = "ready"; result = null; samples = [];
@@ -894,7 +926,7 @@ $("btnDotToggle").onclick = () => {
   $("btnDotToggle").blur(); // so Enter starts the run instead of re-pressing this button
   renderHelperBar(); drawGraph({t:null, trace:null});
 };
-$("btnGameBack").onclick = () => { cancelAnimationFrame(rafId); phase = "idle"; openLevels(); };
+$("btnGameBack").onclick = () => { cancelAnimationFrame(rafId); phase = "idle"; $("screen-game").classList.remove("calc"); openLevels(); };
 
 /* ---------- input ---------- */
 const field = $("field"), track = $("track");
@@ -923,6 +955,7 @@ field.addEventListener("pointerup", endDrag);
 field.addEventListener("pointercancel", endDrag);
 window.addEventListener("keydown", e => {
   if(e.key === "ArrowLeft" || e.key === "ArrowRight"){
+    if(e.target && e.target.tagName === "INPUT") return;
     if($("screen-game").classList.contains("active")){ keys[e.key] = true; e.preventDefault(); }
   }
 });
@@ -1046,7 +1079,7 @@ function showResult(){
   const aw = awardCash(mode, r.score, helped, practice);
   let msg;
   if(practice){
-    msg = "Practice level: no Class Cash. Balance: " + aw.cash + ".";
+    msg = "Practice level: no cash for running, but the calculations pay! Balance: " + aw.cash + ".";
   }else{
     const parts = [];
     if(aw.runCash > 0) parts.push("+" + aw.runCash + " Class Cash for this run");
@@ -1073,6 +1106,192 @@ async function postAndRank(mode, score, helped){
   const idx = list.findIndex(e => String(e.name).toLowerCase() === playerName.toLowerCase());
   $("postNote").textContent = "New personal best! You are #" + (idx + 1) + " on the " + boardName + " board.";
 }
+/* ============================================================
+   CALCULATIONS (after a run)
+   ============================================================ */
+const CALC_SETS = 2; // runs per level per day that pay calculation cash
+const fmt = n => String(parseFloat((Math.round(n * 100) / 100).toFixed(2)));
+const paren = n => n < 0 ? "(" + fmt(n) + ")" : fmt(n);
+const near = (u, v) => Math.abs(u - v) <= 0.051;
+function roundNote(v){ const r = Math.round(v * 10) / 10; return Math.abs(r - v) > 1e-9 ? " (about " + r.toFixed(1) + ")" : ""; }
+
+function buildCalc(L){
+  const T = L.T, pts = L.fn.pts || null, x0 = L.fn(0), x1 = L.fn(T);
+  const legs = [];
+  let dist = 0;
+  if(pts){
+    for(let i = 1; i < pts.length; i++){ const d = Math.abs(pts[i][1] - pts[i-1][1]); legs.push(d); dist += d; }
+  }else{
+    let prev = x0;
+    for(let i = 1; i <= 1500; i++){ const v = L.fn(T * i / 1500); dist += Math.abs(v - prev); prev = v; }
+    dist = Math.round(dist * 100) / 100;
+  }
+  const disp = x1 - x0, spd = dist / T, vel = disp / T, qs = [];
+  const nz = legs.filter(d => d > 0);
+  let distWork;
+  if(!pts) distWork = "Murphy never turns around, so the distance is the size of the displacement: " + fmt(dist) + " m.";
+  else if(nz.length === 0) distWork = "Murphy never moves, so the distance is 0 m.";
+  else if(nz.length === 1) distWork = "Murphy only makes one move, so the distance is " + fmt(dist) + " m.";
+  else distWork = "Distance adds up every move, in either direction: " + nz.map(fmt).join(" + ") + " = " + fmt(dist) + " m.";
+
+  qs.push({id:"disp", unit:"m", ans:disp,
+    text:"What is Murphy's displacement from 0 s to " + T + " s?",
+    work:"Displacement = final position - starting position = " + fmt(x1) + " - " + paren(x0) + " = " + fmt(disp) + " m."});
+  qs.push({id:"dist", unit:"m", ans:dist,
+    text:"What total distance does Murphy travel from 0 s to " + T + " s?",
+    work:distWork});
+  qs.push({id:"spd", unit:"m/s", ans:spd,
+    text:"What is Murphy's average speed for the whole " + T + " seconds? Round to the nearest tenth.",
+    work:"Average speed = total distance ÷ time = " + fmt(dist) + " ÷ " + T + " = " + fmt(spd) + " m/s" + roundNote(spd) + "."});
+  qs.push({id:"vel", unit:"m/s", ans:vel,
+    text:"What is Murphy's average velocity for the whole " + T + " seconds? Round to the nearest tenth.",
+    work:"Average velocity = displacement ÷ time = " + paren(disp) + " ÷ " + T + " = " + fmt(vel) + " m/s" + roundNote(vel) + "."});
+  if(pts){
+    const moving = [];
+    for(let i = 1; i < pts.length; i++) if(pts[i][1] !== pts[i-1][1]) moving.push(i - 1);
+    const j = moving.length ? moving[Math.floor(Math.random() * moving.length)] : 0;
+    const ta = pts[j][0], tb = pts[j+1][0], xa = pts[j][1], xb = pts[j+1][1], v = (xb - xa) / (tb - ta);
+    qs.push({id:"seg", unit:"m/s", ans:v, hl:[ta, tb],
+      text:"What is Murphy's velocity between " + ta + " s and " + tb + " s (the glowing part of the line)? Use the slope. Round to the nearest tenth.",
+      work:"Velocity = slope = change in position ÷ change in time = (" + fmt(xb) + " - " + paren(xa) + ") ÷ (" + tb + " - " + ta + ") = " + fmt(v) + " m/s" + roundNote(v) + "."});
+  }
+  return qs;
+}
+function hintFor(q, a, qs){
+  const by = id => qs.find(x => x.id === id);
+  if(q.id === "disp"){
+    if(q.ans !== 0 && near(a, -q.ans)) return "Check the direction. Ending to the left of the start is negative.";
+    if(near(a, by("dist").ans)) return "That is the total distance. Displacement only compares where Murphy ended to where he started.";
+    return "Displacement = final position minus starting position. Read both from the graph.";
+  }
+  if(q.id === "dist"){
+    if(near(a, by("disp").ans)) return "That is the displacement. Distance adds up every move Murphy makes, no matter which way.";
+    return "Add up how far Murphy moves in each part of the trip. Ignore direction.";
+  }
+  if(q.id === "spd"){
+    if(near(a, by("vel").ans)) return "That is the average velocity. Speed uses the total distance, not the displacement.";
+    if(near(a, by("dist").ans)) return "That is the distance. Divide it by the total time to get speed.";
+    return "Average speed = total distance ÷ total time.";
+  }
+  if(q.id === "vel"){
+    if(near(a, by("spd").ans)) return "That is the average speed. Velocity uses displacement, so direction counts.";
+    if(near(a, by("disp").ans)) return "That is the displacement. Divide it by the total time to get velocity.";
+    return "Average velocity = displacement ÷ total time. Direction counts.";
+  }
+  if(q.ans !== 0 && near(a, -q.ans)) return "Check the sign. A line sloping down means negative velocity.";
+  return "The slope is the change in position divided by the change in time. Read the glowing part's two end points.";
+}
+
+let calc = null;
+const calcBase = L => L.ghost ? 3 : Math.round((MULT[L.id] || 2) * 1.5);
+function calcCanPay(mode){
+  const rec = getRec(playerName), today = new Date().toLocaleDateString();
+  return rec.day !== today || (rec.calcPaid[mode] || 0) < CALC_SETS;
+}
+function addCalcCash(mode, amount, countSet){
+  const rec = getRec(playerName), today = new Date().toLocaleDateString();
+  if(rec.day !== today){ rec.day = today; rec.paid = {}; rec.calcPaid = {}; }
+  rec.cash += amount;
+  if(countSet) rec.calcPaid[mode] = (rec.calcPaid[mode] || 0) + 1;
+  saveRec(playerName, rec);
+  $("cashBal").textContent = rec.cash; $("shopBal").textContent = rec.cash;
+  return rec.cash;
+}
+function setFb(msg, cls){ const f = $("calcFb"); f.textContent = msg; f.className = "calcfb " + (cls || "info"); }
+function startCalc(){
+  if(!result) return;
+  cancelAnimationFrame(rafId);
+  phase = "calc";
+  $("screen-game").classList.add("calc");
+  calc = {qs:buildCalc(lv), i:0, tries:0, right:0, earned:0, counted:false, canPay:calcCanPay(lv.id), base:calcBase(lv)};
+  $("calcEnd").classList.add("hidden");
+  renderQ();
+}
+function renderQ(){
+  const q = calc.qs[calc.i];
+  calc.tries = 0; calc.answered = false;
+  $("calcProg").textContent = "Question " + (calc.i + 1) + " of " + calc.qs.length;
+  $("calcWorth").textContent = calc.canPay
+    ? "Worth +" + calc.base + " Class Cash (+" + Math.round(calc.base / 2) + " on the second try)"
+    : "You already collected calculation cash on this level twice today. Practice is still free!";
+  $("calcQ").textContent = q.text;
+  $("calcUnit").textContent = q.unit;
+  $("calcRow").classList.remove("hidden");
+  $("calcInput").value = ""; $("calcInput").disabled = false;
+  $("btnCalcCheck").disabled = false; $("btnSign").disabled = false;
+  $("btnCalcNext").classList.add("hidden");
+  setFb("Read the graph. Direction counts: left is negative, right is positive.", "info");
+  drawGraph({t:null, calc:true, hl:q.hl || null});
+  $("calcInput").focus();
+}
+function checkCalc(){
+  if(!calc || calc.answered) return;
+  const q = calc.qs[calc.i];
+  const raw = $("calcInput").value.replace(/[\u2212\u2013\u2014]/g, "-").replace(/,/g, ".").trim();
+  const a = parseFloat(raw);
+  if(raw === "" || isNaN(a)){ setFb("Type a number first.", "bad"); return; }
+  calc.tries++;
+  if(near(a, q.ans)){
+    calc.right++;
+    let msg = "Correct!";
+    if(calc.canPay){
+      const amt = calc.tries === 1 ? calc.base : Math.round(calc.base / 2);
+      const bal = addCalcCash(lv.id, amt, !calc.counted);
+      calc.counted = true; calc.earned += amt;
+      msg += " +" + amt + " Class Cash (balance " + bal + ").";
+    }
+    finishQ(msg + " " + q.work, "good");
+  }else if(calc.tries >= 2){
+    finishQ("Not this time. The answer is " + fmt(q.ans) + " " + q.unit + ". " + q.work, "bad");
+  }else{
+    setFb("Not quite. " + hintFor(q, a, calc.qs) + " Try once more for half cash.", "bad");
+    $("calcInput").select();
+  }
+}
+function finishQ(msg, cls){
+  calc.answered = true;
+  setFb(msg, cls);
+  $("calcInput").disabled = true; $("btnCalcCheck").disabled = true; $("btnSign").disabled = true;
+  const last = calc.i === calc.qs.length - 1;
+  $("btnCalcNext").textContent = last ? "See my results" : "Next question";
+  $("btnCalcNext").classList.remove("hidden");
+  $("btnCalcNext").focus();
+}
+function nextQ(){
+  if(calc.i < calc.qs.length - 1){ calc.i++; renderQ(); return; }
+  // summary
+  $("calcProg").textContent = "Calculations done";
+  $("calcWorth").textContent = "";
+  $("calcQ").textContent = "You got " + calc.right + " of " + calc.qs.length + " right.";
+  $("calcRow").classList.add("hidden");
+  $("btnCalcNext").classList.add("hidden");
+  const bal = getRec(playerName).cash;
+  setFb(calc.canPay
+    ? (calc.earned > 0 ? "You earned +" + calc.earned + " Class Cash from the calculations. Balance: " + bal + "." : "No cash this time. Check the worked answers and try again. Balance: " + bal + ".")
+    : "No calculation cash left on this level today, but that was great practice. Balance: " + bal + ".", calc.right === calc.qs.length ? "good" : "info");
+  $("btnCalcNextLevel").textContent = lv.random ? "New random graph" : "Next level";
+  $("btnCalcNextLevel").classList.toggle("hidden", !lv.random && lv.id === String(LEVELS.length));
+  $("calcEnd").classList.remove("hidden");
+  drawGraph({t:null, calc:true, hl:null});
+}
+function exitCalc(){
+  $("screen-game").classList.remove("calc");
+  phase = "done";
+  drawGraph({t:null, result});
+}
+$("btnCalc").onclick = startCalc;
+$("btnCalcCheck").onclick = checkCalc;
+$("btnCalcNext").onclick = nextQ;
+$("btnCalcBack").onclick = exitCalc;
+$("btnCalcRetry").onclick = () => startLevel(lv);
+$("btnCalcNextLevel").onclick = () => { if(lv.random) startLevel(makeRandom(lv.random)); else startLevel(LEVELS[Number(lv.id)]); };
+$("btnSign").onclick = () => {
+  const inp = $("calcInput"), v = inp.value.trim();
+  inp.value = v.startsWith("-") ? v.slice(1) : "-" + v;
+  inp.focus();
+};
+$("calcInput").addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); checkCalc(); } });
+
 $("btnRetry").onclick = () => startLevel(lv);
 $("btnNext").onclick = () => {
   if(lv.random) startLevel(makeRandom(lv.random));
@@ -1154,9 +1373,23 @@ function drawGraph(o){
     g.closePath(); g.fill();
   }
 
+  // highlight the segment a question is asking about
+  if(o.calc && o.hl){
+    g.lineWidth = 16; g.strokeStyle = "rgba(255,138,31,.45)"; g.lineJoin = g.lineCap = "round";
+    g.beginPath();
+    for(let i = 0; i <= 40; i++){ const tt = o.hl[0] + (o.hl[1] - o.hl[0])*i/40; i ? g.lineTo(X(tt), Y(lv.fn(tt))) : g.moveTo(X(tt), Y(lv.fn(tt))); }
+    g.stroke();
+  }
   // target
   g.lineWidth = 5; g.strokeStyle = "#1f6fe5"; g.lineJoin = g.lineCap = "round";
   g.beginPath(); tgt.forEach((p, i) => i ? g.lineTo(X(p[0]), Y(p[1])) : g.moveTo(X(p[0]), Y(p[1]))); g.stroke();
+  if(o.calc){
+    // dots on the points students can read from
+    const pp = lv.fn.pts || [[0, lv.fn(0)], [lv.T, lv.fn(lv.T)]];
+    g.fillStyle = "#fff"; g.strokeStyle = "#1f6fe5"; g.lineWidth = 3;
+    pp.forEach(p => { g.beginPath(); g.arc(X(p[0]), Y(p[1]), 6, 0, 7); g.fill(); g.stroke(); });
+    return;
+  }
 
   // student trace
   g.lineWidth = 4; g.strokeStyle = ringColor;
@@ -1193,6 +1426,7 @@ function drawGraph(o){
 window.addEventListener("resize", () => {
   if(!lv || !$("screen-game").classList.contains("active")) return;
   if(phase === "running") return; // next frame redraws
+  if(phase === "calc"){ drawGraph({t:null, calc:true, hl:calc && calc.qs[calc.i] ? calc.qs[calc.i].hl : null}); return; }
   drawGraph({t:null, trace:null, result:phase === "done" ? result : null});
 });
 
